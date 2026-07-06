@@ -1,0 +1,19 @@
+# 必填：改成你自己的 Markdown 知识库绝对路径
+knowledge_root = "/absolute/path/to/your/WIKI"
+
+# 以下相对路径都以当前配置文件所在目录为基准
+state_dir = "../.llm_wiki_state"
+database_path = "../.llm_wiki_state/index.sqlite3"
+
+# 默认使用真实 embedding；如需纯本地 hashing，可改回 "hashing"
+embedding_backend = "fastembed"
+fastembed_model = "AllMiniLML6V2"
+
+# 先运行 ../model/fetch_fastembed_model.sh 准备模型缓存
+embedding_cache_dir = "../model/fastembed"
+
+hashing_dimensions = 1024
+chunk_char_limit = 1600
+search_limit = 8
+exclude_hidden = true
+exclude_obsidian_dir = true
