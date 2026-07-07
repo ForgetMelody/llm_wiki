@@ -1,14 +1,14 @@
 use std::{
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 #[cfg(feature = "fastembed-backend")]
 use anyhow::Context;
 use anyhow::{Result, bail};
 #[cfg(feature = "fastembed-backend")]
-use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 
 use crate::config::AppConfig;
 
@@ -105,7 +105,9 @@ impl HashingBackend {
 
 #[cfg(feature = "fastembed-backend")]
 struct FastembedBackend {
-    model: Arc<TextEmbedding>,
+    /// fastembed 5.x 的 embed 需要可变借用；这里串行化运行时调用。
+    model: Mutex<TextEmbedding>,
+    batch_size: usize,
 }
 
 #[cfg(feature = "fastembed-backend")]
@@ -113,12 +115,14 @@ impl FastembedBackend {
     /// 初始化 fastembed；首次运行会下载模型到缓存目录。
     fn new(config: &AppConfig) -> Result<Self> {
         let model_name = parse_fastembed_model(&config.fastembed_model)?;
-        let options = InitOptions::new(model_name)
+        let options = TextInitOptions::new(model_name)
             .with_cache_dir(config.embedding_cache_dir.clone())
+            .with_intra_threads(config.fastembed_intra_threads)
             .with_show_download_progress(true);
         let model = TextEmbedding::try_new(options)?;
         Ok(Self {
-            model: Arc::new(model),
+            model: Mutex::new(model),
+            batch_size: config.fastembed_batch_size,
         })
     }
 
@@ -136,7 +140,11 @@ impl FastembedBackend {
     }
 
     fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        Ok(self.model.embed(texts.to_vec(), None)?)
+        let mut model = self
+            .model
+            .lock()
+            .map_err(|_| anyhow::anyhow!("fastembed model mutex poisoned"))?;
+        Ok(model.embed(texts.to_vec(), Some(self.batch_size))?)
     }
 }
 
@@ -275,6 +283,8 @@ mod tests {
             embedding_backend: "hashing".to_string(),
             fastembed_model: "MultilingualE5Small".to_string(),
             embedding_cache_dir: temp.path().join("state/fastembed"),
+            fastembed_intra_threads: 1,
+            fastembed_batch_size: 16,
             hashing_dimensions: 128,
             chunk_char_limit: 256,
             search_limit: 8,

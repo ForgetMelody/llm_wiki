@@ -1006,6 +1006,8 @@ mod tests {
             embedding_backend: "hashing".to_string(),
             fastembed_model: "MultilingualE5Small".to_string(),
             embedding_cache_dir: root.join("state/fastembed"),
+            fastembed_intra_threads: 1,
+            fastembed_batch_size: 16,
             hashing_dimensions: 128,
             chunk_char_limit: 120,
             search_limit: 8,

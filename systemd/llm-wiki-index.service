@@ -6,9 +6,10 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 # 先复制 config/llm_wiki.template.toml 为本地 config/llm_wiki.toml，并修改 knowledge_root
+# 再运行 ./runtime/fetch_onnxruntime_lib.sh 准备仓库内 ORT shared library
 WorkingDirectory=/path/to/llm_wiki
-Environment=ORT_DYLIB_PATH=/path/to/onnxruntime/capi/libonnxruntime.so
-Environment=LD_LIBRARY_PATH=/path/to/onnxruntime/capi
+Environment=ORT_DYLIB_PATH=/path/to/llm_wiki/runtime/onnxruntime/current/lib/libonnxruntime.so
+Environment=LD_LIBRARY_PATH=/path/to/llm_wiki/runtime/onnxruntime/current/lib
 ExecStart=/path/to/llm_wiki/target/release/llm-wiki --config /path/to/llm_wiki/config/llm_wiki.toml index
 
 [Install]

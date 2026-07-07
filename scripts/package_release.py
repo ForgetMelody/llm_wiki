@@ -51,6 +51,7 @@ def build_package_root(
         "docs/mcp_interface.md",
         "model/fetch_fastembed_model.sh",
         "model/fetch_fastembed_model.ps1",
+        "runtime/fetch_onnxruntime_lib.sh",
         "systemd/llm-wiki-index.service",
         "systemd/llm-wiki-mcp.service",
     ):

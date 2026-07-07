@@ -14,6 +14,10 @@ pub struct AppConfig {
     pub embedding_backend: String,
     pub fastembed_model: String,
     pub embedding_cache_dir: PathBuf,
+    #[serde(default = "default_fastembed_intra_threads")]
+    pub fastembed_intra_threads: usize,
+    #[serde(default = "default_fastembed_batch_size")]
+    pub fastembed_batch_size: usize,
     pub hashing_dimensions: usize,
     pub chunk_char_limit: usize,
     pub search_limit: usize,
@@ -57,6 +61,12 @@ impl AppConfig {
         if config.hashing_dimensions == 0 {
             bail!("hashing_dimensions must be greater than zero");
         }
+        if config.fastembed_intra_threads == 0 {
+            bail!("fastembed_intra_threads must be greater than zero");
+        }
+        if config.fastembed_batch_size == 0 {
+            bail!("fastembed_batch_size must be greater than zero");
+        }
 
         fs::create_dir_all(&config.state_dir).with_context(|| {
             format!("failed to create state_dir {}", config.state_dir.display())
@@ -80,7 +90,7 @@ impl AppConfig {
         match self.embedding_backend.as_str() {
             "hashing" => format!("hashing-v1|dim={}|prefix=none", self.hashing_dimensions),
             "fastembed" => format!(
-                "fastembed-v1|model={}|prefix=query:passage",
+                "fastembed-v2|model={}|prefix=query:passage",
                 self.fastembed_model
             ),
             other => format!("unknown|backend={other}"),
@@ -104,6 +114,14 @@ fn resolve_path(base: &Path, path: &Path) -> PathBuf {
     } else {
         base.join(path)
     }
+}
+
+fn default_fastembed_intra_threads() -> usize {
+    1
+}
+
+fn default_fastembed_batch_size() -> usize {
+    16
 }
 
 fn default_metadata_frontmatter_enabled() -> bool {

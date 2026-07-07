@@ -3,3 +3,4 @@ target/
 .llm_wiki_state/
 config/llm_wiki.toml
 model/fastembed/
+runtime/onnxruntime/

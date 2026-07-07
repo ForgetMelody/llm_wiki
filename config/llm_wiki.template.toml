@@ -12,6 +12,10 @@ fastembed_model = "AllMiniLML6V2"
 # 先运行 ../model/fetch_fastembed_model.sh 准备模型缓存
 embedding_cache_dir = "../model/fastembed"
 
+# fastembed 5.x 在当前机器上建议显式限制 ORT 线程与推理 batch，避免首建时内存峰值过高
+fastembed_intra_threads = 1
+fastembed_batch_size = 16
+
 hashing_dimensions = 1024
 chunk_char_limit = 1600
 search_limit = 8

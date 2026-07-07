@@ -63,11 +63,11 @@
 1. **模型缓存**
 2. **ONNX Runtime 动态库**
 
-当前开发环境（Ubuntu 20.04）实际使用并验证的是 **ONNX Runtime 1.19.2**。
+当前开发环境（Ubuntu 20.04 / aarch64）实际使用并验证的是 **`csukuangfj/onnxruntime-libs` 的 shared 资产 `v1.24.4`**。
 
-结合当前依赖组合 `fastembed = 4.0.0` / `ort = 2.0.0-rc.5`，可以先把**理论适配范围**理解为 **ONNX Runtime 1.18.x ~ 1.19.x**；更新版本暂时**没有做新版适配和回归验证**。
+仓库内现在提供 `./runtime/fetch_onnxruntime_lib.sh`，会把当前验证通过的 shared library 拉到 `runtime/onnxruntime/`，并把 `runtime/onnxruntime/current` 指向当前版本。
 
-`llm-wiki` 当前不会把 ORT 动态库打进仓库，也不会把模型本体提交进 git。
+下载下来的 ORT 动态库与模型本体都保持 **gitignore**，不会提交进仓库。
 
 ### 3.3 如果你不想先处理 ORT
 
@@ -161,18 +161,23 @@ Windows PowerShell：
 
 版本说明：
 
-- 当前开发环境（Ubuntu 20.04）已验证：**ONNX Runtime 1.19.2**
-- 当前代码分支可先按**理论适配范围 `1.18.x ~ 1.19.x`** 理解
-- `1.20+` 暂时**没有做新版适配和完整回归验证**
-
+- 当前代码已升级到 **`fastembed 5.17.2` + `ort 2.0.0-rc.12`**
+- 当前开发环境（Ubuntu 20.04 / aarch64）已验证：**`csukuangfj/onnxruntime-libs` 的 shared 资产 `v1.24.4`** 可用
+- 当前接法是 **dynamic loading**；可直接替换的是该仓库里**非 `static_lib` 的 shared 包**，不是静态库包
+- 对 `v1.27.0` 这类更高 ORT 版本，仓库目前**暂未做回归验证**
 Linux 示例：
 
 ```bash
-export ORT_DYLIB_PATH=/path/to/onnxruntime/capi/libonnxruntime.so
-export LD_LIBRARY_PATH=/path/to/onnxruntime/capi
+./runtime/fetch_onnxruntime_lib.sh
+export ORT_DYLIB_PATH="$(pwd)/runtime/onnxruntime/current/lib/libonnxruntime.so"
+export LD_LIBRARY_PATH="$(pwd)/runtime/onnxruntime/current/lib:${LD_LIBRARY_PATH:-}"
 ```
 
 > 注意：只要当前配置仍然使用 `fastembed`，`index`、`search`、`search-sections`、`serve-mcp` 在启动时就会初始化 embedding engine，因此不是“第一次搜索时”才需要 ORT；**MCP server 启动本身就需要**模型缓存和 ORT 动态库。
+
+> 当前模板默认增加了 `fastembed_intra_threads = 1` 与 `fastembed_batch_size = 16`，目的是在已验证的 aarch64 机器上压住首建 RSS；如果你的机器内存更充足、希望提高吞吐，可以显式调大。
+
+> `./runtime/fetch_onnxruntime_lib.sh` 当前只覆盖 Linux `x86_64` / `aarch64`，并固定拉取当前验证通过的 `v1.24.4` shared 包；其他平台仍需手动准备匹配的 shared library。
 
 ### 4.6 执行首次索引
 
@@ -228,6 +233,7 @@ llm-wiki-<tag>-<package-id>/
 ├── docs/mcp_interface.md
 ├── model/fetch_fastembed_model.sh
 ├── model/fetch_fastembed_model.ps1
+├── runtime/fetch_onnxruntime_lib.sh
 └── systemd/
 ```
 
@@ -244,7 +250,8 @@ llm-wiki-<tag>-<package-id>/
 
 - **Rust 只属于源码构建依赖**
 - **ORT 才是当前 `fastembed` 路线的运行时依赖**
-- 裸 `*-unknown-linux-gnu` 资产是 Ubuntu 22 直接编译线；如果目标机器偏旧或你要更稳地兼容 Ubuntu 20，优先使用 `ubuntu20.04-*` 包
+- Linux 下可以直接复用仓库内两个脚本：`./model/fetch_fastembed_model.sh` 与 `./runtime/fetch_onnxruntime_lib.sh`
+- 当前仓库默认按 `fastembed 5.17.2` + ORT shared library 运行；如需现成二进制来源，优先选 `csukuangfj/onnxruntime-libs` 里与平台匹配的非 `static_lib` 资产
 
 1. 解压 release 资产
 2. 复制 `config/llm_wiki.template.toml` 为本地 `config/llm_wiki.toml`
@@ -462,12 +469,14 @@ tag vX.Y.Z or workflow_dispatch(tag)
   - macOS 是 `libonnxruntime.dylib`
   - Windows 是 `onnxruntime.dll`
 - 当前代码走的是 `fastembed` 的 **dynamic loading** 路线；编译期不需要链接你本机的 ORT，真正需要 ORT 的是运行 `index` / `search` / `search-sections` / `serve-mcp` 时。
-- 当前开发环境（Ubuntu 20.04）实际使用并验证的是 **ONNX Runtime 1.19.2**。
-- 结合当前依赖组合 `fastembed = 4.0.0` / `ort = 2.0.0-rc.5`，可先把**理论适配范围**理解为 **ONNX Runtime 1.18.x ~ 1.19.x**。
-- 对 `1.20+` 以及更高版本，仓库目前**暂时没有做新版适配和回归验证**。
+- 当前代码依赖已升级到 **`fastembed 5.17.2` / `ort 2.0.0-rc.12`**。
+- 当前开发环境（Ubuntu 20.04 / aarch64）实际验证可用的是 **`csukuangfj/onnxruntime-libs` 的 shared 资产 `v1.24.4`**。
+- 当前接法下，可直接替换的是该仓库里**非 `static_lib` 的 shared 包**；`static_lib` 产物不能直接代替当前 `ORT_DYLIB_PATH` 路线。
+- 对 `v1.27.0` 以及更高 ORT 版本，仓库目前**暂未做新版适配和回归验证**。
 - 所以当前推荐策略是：
   - CI / Release 只负责构建 `llm-wiki` 二进制
-  - Linux / macOS / Windows 资产，用户本地通过 `ORT_DYLIB_PATH` + `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH` / `PATH` 提供匹配平台的 ORT
+  - Linux 可直接运行 `./runtime/fetch_onnxruntime_lib.sh` 把验证通过的 ORT shared library 拉到仓库内；macOS / Windows 仍按 `ORT_DYLIB_PATH` + `DYLD_LIBRARY_PATH` / `PATH` 手动提供匹配平台的 shared library
+  - 模板默认把 `fastembed_intra_threads = 1`、`fastembed_batch_size = 16` 设为保守值；机器更强时可自行调大
   - 如果只是想先验证索引和 MCP，不想先处理 ORT，就把 `embedding_backend` 改成 `hashing`
 
 ### 10.2 只想先验证索引和 MCP，不想处理模型
