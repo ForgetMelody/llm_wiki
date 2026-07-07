@@ -349,9 +349,11 @@ llm-wiki --config /absolute/path/to/config/llm_wiki.toml serve-mcp
 
 - `.github/workflows/ci.yml`
   - 在 `main` / `master` 的 `push` 与 `pull_request` 上执行 `cargo fmt --check` 和 `cargo test --locked`
+  - 当前 verify matrix 覆盖 `ubuntu-22.04` 与 `ubuntu-24.04`
   - 也支持 `workflow_dispatch` 手动触发
 - `.github/workflows/release.yml`
   - 在 tag `v*.*.*` 上触发
+  - release 前同样先在 `ubuntu-22.04` 与 `ubuntu-24.04` 上跑 verify
   - 也支持 `workflow_dispatch`，手动输入 tag 发布
   - 先验证，再构建多平台 release 资产
   - 自动创建 GitHub Release 并上传压缩包
@@ -402,6 +404,30 @@ tag vX.Y.Z or workflow_dispatch(tag)
 - `ORT_DYLIB_PATH` 是否指向真实存在的动态库文件
 - Linux/macOS 的库目录是否已加入 `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH`
 - Windows 的 dll 目录是否已加入 `PATH`
+
+### 10.1.1 GitHub Actions 里的 Ubuntu 20.04 怎么办
+
+- 当前 GitHub-hosted runner 官方可用表里有 `ubuntu-22.04`、`ubuntu-24.04`、`ubuntu-26.04`，**没有 `ubuntu-20.04`**。
+- 所以仓库现在把 hosted verify 覆盖到 `22.04 + 24.04`。
+- 如果你确实还要验证 Ubuntu 20.04，有两条路：
+  - 用 self-hosted 20.04 runner
+  - 或在 `ubuntu-24.04` runner 上额外跑一个 `ubuntu:20.04` container compatibility job
+
+### 10.1.2 onnxruntime 动态库当前怎么处理
+
+- 当前 release **不打包** `onnxruntime` 动态库。
+- 原因不是编译做不到，而是它属于**平台/架构/安装方式强相关的运行时依赖**：
+  - Linux 是 `libonnxruntime.so`
+  - macOS 是 `libonnxruntime.dylib`
+  - Windows 是 `onnxruntime.dll`
+- 当前代码走的是 `fastembed` 的 **dynamic loading** 路线；编译期不需要链接你本机的 ORT，真正需要 ORT 的是运行 `index` / `search` / `search-sections` / `serve-mcp` 时。
+- 所以当前推荐策略是：
+  - CI / Release 只负责构建 `llm-wiki` 二进制
+  - 用户本地通过 `ORT_DYLIB_PATH` + `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH` / `PATH` 提供匹配平台的 ORT
+  - 如果不想处理 ORT，就把 `embedding_backend` 改成 `hashing`
+- 如果后面你要把安装体验继续做厚，有两个可选方向：
+  - 为每个平台额外提供 ORT 下载脚本
+  - 或在 release workflow 里按平台附带官方 ORT runtime 资产
 
 ### 10.2 只想先验证索引和 MCP，不想处理模型
 
