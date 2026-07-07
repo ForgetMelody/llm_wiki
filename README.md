@@ -348,9 +348,11 @@ llm-wiki --config /absolute/path/to/config/llm_wiki.toml serve-mcp
 仓库会包含两个 workflow：
 
 - `.github/workflows/ci.yml`
-  - 在 `push` / `pull_request` 上执行 `cargo fmt --check` 和 `cargo test --locked`
+  - 在 `main` / `master` 的 `push` 与 `pull_request` 上执行 `cargo fmt --check` 和 `cargo test --locked`
+  - 也支持 `workflow_dispatch` 手动触发
 - `.github/workflows/release.yml`
-  - 在 tag `v*` 上触发
+  - 在 tag `v*.*.*` 上触发
+  - 也支持 `workflow_dispatch`，手动输入 tag 发布
   - 先验证，再构建多平台 release 资产
   - 自动创建 GitHub Release 并上传压缩包
 
@@ -371,17 +373,24 @@ git tag v0.1.0
 ### 9.2 当前 release workflow 的行为
 
 ```text
-tag vX.Y.Z
-  └── verify
-      ├── cargo fmt --check
-      └── cargo test --locked
-  └── build matrix
-      ├── Linux x86_64
-      ├── Windows x86_64
-      ├── macOS x86_64
-      └── macOS arm64
-  └── create GitHub Release
-      └── upload packaged archives
+push main/master or pull_request
+  └── CI
+      └── verify
+          ├── cargo fmt --check
+          └── cargo test --locked
+
+tag vX.Y.Z or workflow_dispatch(tag)
+  └── Release
+      └── verify
+          ├── cargo fmt --check
+          └── cargo test --locked
+      └── build matrix
+          ├── Linux x86_64
+          ├── Windows x86_64
+          ├── macOS x86_64
+          └── macOS arm64
+      └── create GitHub Release
+          └── upload packaged archives
 ```
 
 ## 10. 常见问题

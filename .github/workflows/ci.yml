@@ -1,10 +1,15 @@
-name: ci
+name: CI
 
 on:
   push:
-    tags-ignore:
-      - 'v*'
+    branches: [main, master]
   pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
