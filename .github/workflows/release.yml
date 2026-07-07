@@ -29,6 +29,7 @@ jobs:
         os:
           - ubuntu-22.04
           - ubuntu-24.04
+          - ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -58,8 +59,16 @@ jobs:
             target: x86_64-unknown-linux-gnu
             archive_format: tar.gz
             binary_name: llm-wiki
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            archive_format: tar.gz
+            binary_name: llm-wiki
           - os: windows-2022
             target: x86_64-pc-windows-msvc
+            archive_format: zip
+            binary_name: llm-wiki.exe
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
             archive_format: zip
             binary_name: llm-wiki.exe
           - os: macos-13

@@ -195,7 +195,9 @@ export LD_LIBRARY_PATH=/path/to/onnxruntime/capi
 当前 release workflow 会构建这些平台：
 
 - `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
 - `x86_64-pc-windows-msvc`
+- `aarch64-pc-windows-msvc`
 - `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
 
@@ -373,11 +375,12 @@ llm-wiki --config /absolute/path/to/config/llm_wiki.toml serve-mcp
 
 - `.github/workflows/ci.yml`
   - 在 `main` / `master` 的 `push` 与 `pull_request` 上执行 `cargo fmt --check` 和 `cargo test --locked`
-  - 当前 verify matrix 覆盖 `ubuntu-22.04` 与 `ubuntu-24.04`
+  - 当前 verify matrix 覆盖 `ubuntu-22.04`、`ubuntu-24.04`、`ubuntu-24.04-arm`
   - 也支持 `workflow_dispatch` 手动触发
 - `.github/workflows/release.yml`
   - 在 tag `v*.*.*` 上触发
-  - release 前同样先在 `ubuntu-22.04` 与 `ubuntu-24.04` 上跑 verify
+  - release 前同样先在 `ubuntu-22.04`、`ubuntu-24.04`、`ubuntu-24.04-arm` 上跑 verify
+  - release 构建矩阵覆盖 Linux / Windows / macOS 的 `x86_64 + arm`
   - 也支持 `workflow_dispatch`，手动输入 tag 发布
   - 先验证，再构建多平台 release 资产
   - 自动创建 GitHub Release 并上传压缩包
