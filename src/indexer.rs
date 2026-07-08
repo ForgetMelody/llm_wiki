@@ -100,17 +100,26 @@ impl<'a> Indexer<'a> {
                 .collect::<Vec<_>>();
             graph_inputs.push(build_graph_input(&doc, &sections));
 
-            let has_sections = self.db.has_sections_for_doc(&doc.relative_path)?;
+            let chunk_drafts = markdown::chunk_document(&doc, self.config.chunk_char_limit);
+            let expected_section_count = sections.len();
+            let expected_chunk_count = chunk_drafts.len();
+            let section_count = self.db.section_count_for_doc(&doc.relative_path)?;
             let has_doc_embedding = self.db.has_doc_embedding_for_doc(&doc.relative_path)?;
-            let has_section_embeddings =
-                self.db.has_section_embeddings_for_doc(&doc.relative_path)?;
+            let section_embedding_count = self
+                .db
+                .section_embedding_count_for_doc(&doc.relative_path)?;
+            let chunk_count = self.db.chunk_count_for_doc(&doc.relative_path)?;
             let has_section_anchors = self.db.has_section_anchors_for_doc(&doc.relative_path)?;
             let has_chunk_anchors = self.db.has_chunk_anchors_for_doc(&doc.relative_path)?;
-            if has_sections
+            let sections_ready = section_count == expected_section_count
+                && (expected_section_count == 0 || has_section_anchors);
+            let section_embeddings_ready = section_embedding_count == expected_section_count;
+            let chunks_ready = chunk_count == expected_chunk_count
+                && (expected_chunk_count == 0 || has_chunk_anchors);
+            if sections_ready
                 && has_doc_embedding
-                && has_section_embeddings
-                && has_section_anchors
-                && has_chunk_anchors
+                && section_embeddings_ready
+                && chunks_ready
                 && previous_manifest.is_some_and(|manifest| {
                     manifest.file_hash == file_hash
                         && manifest.embedding_fingerprint == embedding_fingerprint
@@ -152,7 +161,6 @@ impl<'a> Indexer<'a> {
                 })
                 .collect::<Vec<_>>();
 
-            let chunk_drafts = markdown::chunk_document(&doc, self.config.chunk_char_limit);
             let chunk_embeddings = if chunk_drafts.is_empty() {
                 Vec::new()
             } else {
@@ -213,20 +221,39 @@ impl<'a> Indexer<'a> {
             .collect::<Vec<_>>();
         stats.deleted_docs = self.db.delete_documents(&deleted_paths)?;
 
-        if self.config.graph_enabled {
-            let doc_embeddings = self.db.load_all_doc_embeddings()?;
-            let section_embeddings = self.db.load_all_section_embeddings()?;
-            let (graph_nodes, graph_edges) = build_graph_records(
-                &graph_inputs,
-                &doc_embeddings,
-                &section_embeddings,
-                &self.config.graph_fingerprint(),
-                self.config.graph_semantic_neighbors_per_node,
-                self.config.graph_semantic_min_score,
-            )?;
-            self.db.replace_graph(&graph_nodes, &graph_edges)?;
-        } else {
-            self.db.replace_graph(&[], &[])?;
+        let desired_graph_fingerprint = self.config.graph_fingerprint();
+        let has_graph = self.db.has_graph()?;
+        let current_graph_fingerprint = self.db.current_graph_fingerprint()?;
+        let graph_dirty = stats.updated_docs > 0
+            || stats.deleted_docs > 0
+            || if self.config.graph_enabled {
+                if seen_paths.is_empty() {
+                    has_graph
+                } else {
+                    !has_graph
+                        || current_graph_fingerprint.as_deref()
+                            != Some(desired_graph_fingerprint.as_str())
+                }
+            } else {
+                has_graph
+            };
+
+        if graph_dirty {
+            if self.config.graph_enabled {
+                let doc_embeddings = self.db.load_all_doc_embeddings()?;
+                let section_embeddings = self.db.load_all_section_embeddings()?;
+                let (graph_nodes, graph_edges) = build_graph_records(
+                    &graph_inputs,
+                    &doc_embeddings,
+                    &section_embeddings,
+                    &desired_graph_fingerprint,
+                    self.config.graph_semantic_neighbors_per_node,
+                    self.config.graph_semantic_min_score,
+                )?;
+                self.db.replace_graph(&graph_nodes, &graph_edges)?;
+            } else {
+                self.db.replace_graph(&[], &[])?;
+            }
         }
 
         stats.total_chunks = self.db.total_chunks()?;

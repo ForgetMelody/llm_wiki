@@ -53,7 +53,7 @@ def build_package_root(
         "model/fetch_fastembed_model.ps1",
         "runtime/fetch_onnxruntime_lib.sh",
         "systemd/llm-wiki-index.service",
-        "systemd/llm-wiki-mcp.service",
+        "systemd/llm-wiki-watch.service",
     ):
         copy_tree_file(repo_root, relative_path, package_root)
 

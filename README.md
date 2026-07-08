@@ -185,11 +185,19 @@ export LD_LIBRARY_PATH="$(pwd)/runtime/onnxruntime/current/lib:${LD_LIBRARY_PATH
 ./target/release/llm-wiki --config config/llm_wiki.toml index
 ```
 
-### 4.7 启动 MCP server
+### 4.7 启动后台 poll watch
+
+```bash
+./target/release/llm-wiki --config config/llm_wiki.toml watch --mode poll --interval-secs 60
+```
+
+### 4.8 启动 MCP server
 
 ```bash
 ./target/release/llm-wiki --config config/llm_wiki.toml serve-mcp
 ```
+
+> `serve-mcp` 是 stdio MCP 进程，应该由 OMP / MCP client 按需拉起并接管 stdin/stdout；不要把它当作长期 systemd daemon。
 
 ## 5. 从 GitHub Release 下载使用
 
@@ -342,6 +350,9 @@ llm-wiki --config /absolute/path/to/config/llm_wiki.toml serve-mcp
 # 增量重建整个知识树
 ./target/release/llm-wiki --config config/llm_wiki.toml index
 
+# 后台轮询自动补充增量索引
+./target/release/llm-wiki --config config/llm_wiki.toml watch --mode poll --interval-secs 60
+
 # chunk 级检索
 ./target/release/llm-wiki --config config/llm_wiki.toml search --query "rosconsole" --limit 5
 
@@ -372,13 +383,14 @@ llm-wiki --config /absolute/path/to/config/llm_wiki.toml serve-mcp
 仓库已提供示例：
 
 - `systemd/llm-wiki-index.service`
-- `systemd/llm-wiki-mcp.service`
+- `systemd/llm-wiki-watch.service`
 
 使用方法：
 
 1. 根据你的安装路径替换占位符
 2. 确认 `ExecStart` 中 `--config` 指向真实本地配置
 3. 如果使用 `fastembed`，同时配置 ORT 环境变量
+4. `watch.service` 负责后台 poll 自动补充索引；`serve-mcp` 仍应由 MCP client 直接拉起
 
 ## 9. GitHub Actions 与 tag 发布
 

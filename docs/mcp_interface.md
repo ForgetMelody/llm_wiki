@@ -66,7 +66,7 @@
 
 - 优先走 locator-first：先拿 `anchor`，再直接读/改 Markdown 源文件
 - `get_metadata_template` / `check_metadata` 只提供模板、定位与校验；frontmatter 实际写入由 agent 自己完成
-- `reindex_all` 不应作为正常主路径；后续应由 watcher 自动增量刷新接管
+- `reindex_all` 不应作为正常主路径；后台自动刷新建议由独立 `llm-wiki watch --mode poll` 接管
 
 ## 6. `tools/call` 请求示例
 

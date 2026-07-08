@@ -1,8 +1,13 @@
 use std::path::PathBuf;
 
 use anyhow::{Result, bail};
-use clap::{Parser, Subcommand};
-use llm_wiki::{config::AppConfig, markdown, mcp, service::KnowledgeService};
+use clap::{Parser, Subcommand, ValueEnum};
+use llm_wiki::{
+    config::AppConfig,
+    markdown, mcp,
+    service::KnowledgeService,
+    watch::{self, WatchMode, WatchOptions},
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "llm-wiki")]
@@ -14,6 +19,19 @@ struct Cli {
 
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum WatchModeArg {
+    Poll,
+}
+
+impl From<WatchModeArg> for WatchMode {
+    fn from(value: WatchModeArg) -> Self {
+        match value {
+            WatchModeArg::Poll => WatchMode::Poll,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -70,6 +88,15 @@ enum Command {
     MetadataTemplate {
         #[arg(long)]
         path: Option<String>,
+    },
+    /// 以后台轮询方式自动补充增量索引
+    Watch {
+        #[arg(long, value_enum, default_value_t = WatchModeArg::Poll)]
+        mode: WatchModeArg,
+        #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
+        interval_secs: u64,
+        #[arg(long, default_value_t = false)]
+        skip_initial_scan: bool,
     },
     /// 通过 stdio 启动 MCP 服务
     ServeMcp,
@@ -154,6 +181,22 @@ async fn main() -> Result<()> {
             let service = KnowledgeService::new_without_embedder(config)?;
             let result = service.document_outline(&path)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        Command::Watch {
+            mode,
+            interval_secs,
+            skip_initial_scan,
+        } => {
+            let config = AppConfig::load(&cli.config)?;
+            let service = KnowledgeService::new(config)?;
+            watch::run(
+                service,
+                WatchOptions {
+                    mode: mode.into(),
+                    interval_secs,
+                    run_on_startup: !skip_initial_scan,
+                },
+            )?;
         }
         Command::ServeMcp => {
             let config = AppConfig::load(&cli.config)?;

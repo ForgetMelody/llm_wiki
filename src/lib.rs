@@ -7,3 +7,4 @@ pub mod markdown;
 pub mod mcp;
 pub mod model;
 pub mod service;
+pub mod watch;

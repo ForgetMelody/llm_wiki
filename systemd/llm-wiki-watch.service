@@ -1,5 +1,5 @@
 [Unit]
-Description=llm_wiki MCP stdio server
+Description=llm_wiki poll watch
 After=network-online.target
 Wants=network-online.target
 
@@ -10,8 +10,9 @@ Type=simple
 WorkingDirectory=/path/to/llm_wiki
 Environment=ORT_DYLIB_PATH=/path/to/llm_wiki/runtime/onnxruntime/current/lib/libonnxruntime.so
 Environment=LD_LIBRARY_PATH=/path/to/llm_wiki/runtime/onnxruntime/current/lib
-ExecStart=/path/to/llm_wiki/target/release/llm-wiki --config /path/to/llm_wiki/config/llm_wiki.toml serve-mcp
-Restart=on-failure
+ExecStart=/path/to/llm_wiki/target/release/llm-wiki --config /path/to/llm_wiki/config/llm_wiki.toml watch --mode poll --interval-secs 60
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

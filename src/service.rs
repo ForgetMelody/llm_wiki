@@ -1,9 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
+    fs::{File, OpenOptions},
+    io::ErrorKind,
     path::{Component, Path, PathBuf},
 };
 
 use anyhow::{Context, Result, bail};
+use fs2::FileExt;
 use serde_json::Value;
 
 use crate::{
@@ -13,7 +16,7 @@ use crate::{
     indexer::Indexer,
     markdown,
     model::{
-        DocumentListItem, DocumentOutlineResponse, GraphEdgeRecord, GraphNodeRecord,
+        DocumentListItem, DocumentOutlineResponse, GraphEdgeRecord, GraphNodeRecord, IndexStats,
         LibraryOverviewResponse, LineSpan, ListDocumentsResponse, MetadataCheckResponse,
         MetadataTemplateResponse, RelatedHit, RelatedResponse, SearchHit, SearchResponse,
         SectionOutlineItem, SectionRecord, SectionSearchHit, SectionSearchResponse, SourceAnchor,
@@ -25,6 +28,22 @@ pub struct KnowledgeService {
     config: AppConfig,
     db: IndexDatabase,
     embedder: EmbeddingEngine,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum IndexLockMode {
+    Blocking,
+    Try,
+}
+
+struct IndexLockGuard {
+    file: File,
+}
+
+impl Drop for IndexLockGuard {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
 }
 
 impl KnowledgeService {
@@ -58,8 +77,49 @@ impl KnowledgeService {
         })
     }
 
-    pub fn reindex_all(&self) -> Result<crate::model::IndexStats> {
-        Indexer::new(&self.config, &self.db, &self.embedder).reindex_all()
+    /// 显式重建入口：阻塞等待索引锁，确保只有一个 writer 扫描并写库。
+    pub fn reindex_all(&self) -> Result<IndexStats> {
+        self.reindex_with_lock(IndexLockMode::Blocking)?
+            .context("blocking index lock unexpectedly unavailable")
+    }
+
+    /// 后台 watch 入口：若已有 writer 在运行，则跳过本轮，避免并发重扫。
+    pub fn try_reindex_all(&self) -> Result<Option<IndexStats>> {
+        self.reindex_with_lock(IndexLockMode::Try)
+    }
+
+    fn reindex_with_lock(&self, lock_mode: IndexLockMode) -> Result<Option<IndexStats>> {
+        let Some(_guard) = self.acquire_index_lock(lock_mode)? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            Indexer::new(&self.config, &self.db, &self.embedder).reindex_all()?,
+        ))
+    }
+
+    fn acquire_index_lock(&self, lock_mode: IndexLockMode) -> Result<Option<IndexLockGuard>> {
+        let lock_path = self.config.state_dir.join("index.lock");
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .with_context(|| format!("failed to open index lock {}", lock_path.display()))?;
+
+        match lock_mode {
+            IndexLockMode::Blocking => {
+                file.lock_exclusive()
+                    .with_context(|| format!("failed to lock {}", lock_path.display()))?;
+                Ok(Some(IndexLockGuard { file }))
+            }
+            IndexLockMode::Try => match file.try_lock_exclusive() {
+                Ok(()) => Ok(Some(IndexLockGuard { file })),
+                Err(err) if err.kind() == ErrorKind::WouldBlock => Ok(None),
+                Err(err) => {
+                    Err(err).with_context(|| format!("failed to lock {}", lock_path.display()))
+                }
+            },
+        }
     }
 
     /// 返回知识库分层概览，作为图谱/导航入口。

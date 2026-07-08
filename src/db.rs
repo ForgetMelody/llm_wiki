@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
@@ -150,14 +151,14 @@ impl IndexDatabase {
         Ok(set)
     }
 
-    pub fn has_sections_for_doc(&self, doc_path: &str) -> Result<bool> {
+    pub fn section_count_for_doc(&self, doc_path: &str) -> Result<usize> {
         let conn = self.open()?;
         let count = conn.query_row(
             "SELECT COUNT(*) FROM sections WHERE doc_path = ?1",
             params![doc_path],
             |row| row.get::<_, i64>(0),
         )?;
-        Ok(count > 0)
+        Ok(count as usize)
     }
 
     pub fn has_doc_embedding_for_doc(&self, doc_path: &str) -> Result<bool> {
@@ -170,14 +171,14 @@ impl IndexDatabase {
         Ok(count > 0)
     }
 
-    pub fn has_section_embeddings_for_doc(&self, doc_path: &str) -> Result<bool> {
+    pub fn section_embedding_count_for_doc(&self, doc_path: &str) -> Result<usize> {
         let conn = self.open()?;
         let count = conn.query_row(
             "SELECT COUNT(*) FROM section_embeddings WHERE doc_path = ?1",
             params![doc_path],
             |row| row.get::<_, i64>(0),
         )?;
-        Ok(count > 0)
+        Ok(count as usize)
     }
 
     pub fn has_section_anchors_for_doc(&self, doc_path: &str) -> Result<bool> {
@@ -214,6 +215,16 @@ impl IndexDatabase {
             |row| row.get::<_, i64>(0),
         )?;
         Ok(anchored == count)
+    }
+
+    pub fn chunk_count_for_doc(&self, doc_path: &str) -> Result<usize> {
+        let conn = self.open()?;
+        let count = conn.query_row(
+            "SELECT COUNT(*) FROM chunks WHERE doc_path = ?1",
+            params![doc_path],
+            |row| row.get::<_, i64>(0),
+        )?;
+        Ok(count as usize)
     }
 
     /// 用事务替换单个文档、其 section、各层向量及全部块。
@@ -374,6 +385,30 @@ impl IndexDatabase {
 
         tx.commit()?;
         Ok(())
+    }
+
+    /// 返回图谱层是否已有内容；供 watch/no-op 路径判断是否需要补建或清空。
+    pub fn has_graph(&self) -> Result<bool> {
+        let conn = self.open()?;
+        let node_count = conn.query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| {
+            row.get::<_, i64>(0)
+        })?;
+        let edge_count = conn.query_row("SELECT COUNT(*) FROM graph_edges", [], |row| {
+            row.get::<_, i64>(0)
+        })?;
+        Ok(node_count > 0 || edge_count > 0)
+    }
+
+    /// 读取当前图谱指纹；为空时表示尚未构建完整图谱或图已被清空。
+    pub fn current_graph_fingerprint(&self) -> Result<Option<String>> {
+        let conn = self.open()?;
+        conn.query_row(
+            "SELECT graph_fingerprint FROM graph_edges LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(Into::into)
     }
 
     pub fn delete_documents(&self, doc_paths: &[String]) -> Result<usize> {
@@ -658,7 +693,10 @@ impl IndexDatabase {
     fn open(&self) -> Result<Connection> {
         let conn = Connection::open(&self.db_path)
             .with_context(|| format!("failed to open sqlite {}", self.db_path.display()))?;
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        conn.busy_timeout(Duration::from_millis(5_000))?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        conn.pragma_update(None, "foreign_keys", true)?;
         Ok(conn)
     }
 
@@ -774,5 +812,74 @@ impl IndexDatabase {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IndexDatabase;
+    use crate::model::{GraphEdgeRecord, GraphNodeRecord};
+    use tempfile::TempDir;
+
+    #[test]
+    fn open_enables_sqlite_pragmas_for_concurrent_access() {
+        let temp = TempDir::new().unwrap();
+        let db = IndexDatabase::new(temp.path().join("index.sqlite3"));
+        db.init().unwrap();
+
+        let conn = db.open().unwrap();
+        let journal_mode: String = conn
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .unwrap();
+        let synchronous: i64 = conn
+            .pragma_query_value(None, "synchronous", |row| row.get(0))
+            .unwrap();
+        let foreign_keys: i64 = conn
+            .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+            .unwrap();
+        let busy_timeout: i64 = conn
+            .pragma_query_value(None, "busy_timeout", |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
+        assert_eq!(synchronous, 1);
+        assert_eq!(foreign_keys, 1);
+        assert_eq!(busy_timeout, 5_000);
+    }
+
+    #[test]
+    fn graph_presence_and_fingerprint_reflect_replaced_graph() {
+        let temp = TempDir::new().unwrap();
+        let db = IndexDatabase::new(temp.path().join("index.sqlite3"));
+        db.init().unwrap();
+        assert!(!db.has_graph().unwrap());
+        assert_eq!(db.current_graph_fingerprint().unwrap(), None);
+
+        db.replace_graph(
+            &[GraphNodeRecord {
+                node_id: "doc::note".to_string(),
+                node_type: "doc".to_string(),
+                ref_path: "note.md".to_string(),
+                ref_section: String::new(),
+                label: "note".to_string(),
+                payload_json: "{}".to_string(),
+            }],
+            &[GraphEdgeRecord {
+                edge_id: "edge-1".to_string(),
+                src_node_id: "doc::note".to_string(),
+                dst_node_id: "doc::note".to_string(),
+                edge_type: "semantic_similar_doc".to_string(),
+                weight: 0.5,
+                evidence_json: "{}".to_string(),
+                graph_fingerprint: "graph-v-test".to_string(),
+            }],
+        )
+        .unwrap();
+
+        assert!(db.has_graph().unwrap());
+        assert_eq!(
+            db.current_graph_fingerprint().unwrap().as_deref(),
+            Some("graph-v-test")
+        );
     }
 }
